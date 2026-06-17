@@ -27,22 +27,26 @@ export default function BlogEntryDetail({ entryId, onBack }) {
   const [rephrasing, setRephrasing] = React.useState(false);
 
   React.useEffect(() => {
+    const controller = new AbortController();
+
     const fetchEntry = async () => {
-      const res = await fetch(`${API_URL}/api/blogs/${entryId}`);
+      const res = await fetch(`${API_URL}/api/blogs/${entryId}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error('Failed to fetch entry');
       const data = await res.json();
       addTransfer(new Blob([JSON.stringify(data)]).size);
       return data;
     };
 
-    // Fetch all comments upfront so the full list is available client-side for
-    // instant filtering without an extra round-trip when switching between entries.
     const fetchComments = async () => {
-      const res = await fetch(`${API_URL}/api/comments`);
+      const res = await fetch(`${API_URL}/api/blogs/${entryId}/comments`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error('Failed to fetch comments');
       const data = await res.json();
       addTransfer(new Blob([JSON.stringify(data)]).size);
-      return data.filter((c) => c.blogEntryId === entryId);
+      return data;
     };
 
     Promise.all([fetchEntry(), fetchComments()])
@@ -52,20 +56,13 @@ export default function BlogEntryDetail({ entryId, onBack }) {
         setLoading(false);
       })
       .catch((err) => {
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
-  }, [entryId]);
 
-  // Pre-warm the browser image cache with the full-resolution source so the
-  // image renders without flicker if the user opens it directly in a new tab.
-  React.useEffect(() => {
-    if (!entry) return;
-    fetch(entry.img)
-      .then((res) => res.blob())
-      .then((blob) => { addTransfer(blob.size); })
-      .catch(() => {});
-  }, [entry]);
+    return () => controller.abort();
+  }, [entryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rephraseComment = async () => {
     if (!commentText.trim()) return;
@@ -98,11 +95,9 @@ export default function BlogEntryDetail({ entryId, onBack }) {
       if (!res.ok) throw new Error('Failed to post comment');
       const newComment = await res.json();
       addTransfer(new Blob([JSON.stringify(newComment)]).size);
+      setComments((currentComments) => [newComment, ...currentComments]);
       setAuthor('');
       setCommentText('');
-      // Hard reload guarantees the comment list and all counters are fully
-      // in sync with the server, avoiding stale React state after a write.
-      window.location.reload();
     } catch {
     } finally {
       setPosting(false);

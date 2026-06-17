@@ -6,6 +6,7 @@ import { styled } from '@mui/material/styles';
 import { useTransfer } from '../TransferContext';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4500';
+const COMMENT_LIMIT = 6;
 
 const StyledTypography = styled(Typography)({
   display: '-webkit-box',
@@ -22,20 +23,27 @@ export default function Latest() {
   const [error, setError] = React.useState(null);
 
   React.useEffect(() => {
-    fetch(`${API_URL}/api/comments`)
+    const controller = new AbortController();
+
+    fetch(`${API_URL}/api/comments?limit=${COMMENT_LIMIT}`, {
+      signal: controller.signal,
+    })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch comments');
         return res.json();
       })
       .then((data) => {
         addTransfer(new Blob([JSON.stringify(data)]).size);
-        setComments(data);
+        setComments(data.slice(0, COMMENT_LIMIT));
         setLoading(false);
       })
       .catch((err) => {
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, []);
 
   return (

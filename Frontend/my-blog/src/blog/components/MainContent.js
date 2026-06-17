@@ -126,37 +126,32 @@ export default function MainContent({ onSelectEntry }) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [focusedCardIndex, setFocusedCardIndex] = React.useState(null);
-  const bufferRef = React.useRef({});
 
   React.useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
-    bufferRef.current = {};
 
-    const fetchPage = (p) => {
-      return fetch(`${API_URL}/api/blogs?page=${p}&limit=${PAGE_SIZE}`)
-        .then((res) => {
-          if (!res.ok) throw new Error('Failed to fetch blog entries');
-          const total = parseInt(res.headers.get('x-total-count') || '0', 10);
-          return res.json().then((data) => {
-            addTransfer(new Blob([JSON.stringify(data)]).size);
-            return { data, total };
-          });
-        });
-    };
-
-    // Load the current page plus the next page upfront so that switching to
-    // the next page can be served instantly from the buffer without a new request.
-    Promise.all([page, page + 1].map((p) => fetchPage(p).catch(() => ({ data: [], total: 0 }))))
-      .then(([current, ...rest]) => {
-        setEntries(current.data);
-        setTotalPages(Math.ceil(current.total / PAGE_SIZE) || 1);
-        bufferRef.current = Object.fromEntries(rest.map((r, i) => [page + 1 + i, r.data]));
+    fetch(`${API_URL}/api/blogs?page=${page}&limit=${PAGE_SIZE}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch blog entries');
+        const total = parseInt(res.headers.get('x-total-count') || '0', 10);
+        return res.json().then((data) => ({ data, total }));
+      })
+      .then(({ data, total }) => {
+        addTransfer(new Blob([JSON.stringify(data)]).size);
+        setEntries(data);
+        setTotalPages(Math.ceil(total / PAGE_SIZE) || 1);
         setLoading(false);
       })
       .catch((err) => {
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredEntries = selectedTag

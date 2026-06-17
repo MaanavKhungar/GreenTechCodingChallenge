@@ -44,31 +44,22 @@ export default function BlogEntryDetail({ entryId, onBack }: Props) {
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    const controller = new AbortController();
+
     const fetchEntry = async (): Promise<IBlogEntry> => {
-      const url = `${API_URL}/api/blogs/${entryId}`;
-      console.log(`[Detail] GET ${url}`);
-      const t0 = Date.now();
-      const res = await fetch(url);
+      const res = await fetch(`${API_URL}/api/blogs/${entryId}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error('Failed to fetch entry');
-      const data: IBlogEntry = await res.json();
-      const sizeKB = (new Blob([JSON.stringify(data)]).size / 1024).toFixed(1);
-      console.log(`[Detail] entry · ${sizeKB} KB · ${Date.now() - t0}ms`);
-      return data;
+      return res.json();
     };
 
     const fetchComments = async (): Promise<IComment[]> => {
-      const url = `${API_URL}/api/comments`;
-      console.log(`[Detail] GET ${url}`);
-      const t0 = Date.now();
-      const res = await fetch(url);
+      const res = await fetch(`${API_URL}/api/blogs/${entryId}/comments`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error('Failed to fetch comments');
-      const data: IComment[] = await res.json();
-      const sizeKB = (new Blob([JSON.stringify(data)]).size / 1024).toFixed(1);
-      const filtered = data.filter((c) => c.blogEntryId === entryId);
-      console.log(
-        `[Detail] ${data.length} comments total · ${filtered.length} for this entry · ${sizeKB} KB · ${Date.now() - t0}ms`,
-      );
-      return filtered;
+      return res.json();
     };
 
     Promise.all([fetchEntry(), fetchComments()])
@@ -78,24 +69,13 @@ export default function BlogEntryDetail({ entryId, onBack }: Props) {
         setLoading(false);
       })
       .catch((err: Error) => {
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
-  }, [entryId]);
 
-  // Redundant frontend image fetch — backend already embedded it as base64
-  React.useEffect(() => {
-    if (!entry) return;
-    console.log(`[Detail:img] GET ${entry.img}`);
-    const t0 = Date.now();
-    fetch(entry.img)
-      .then((res) => res.blob())
-      .then((blob) => {
-        const sizeKB = (blob.size / 1024).toFixed(1);
-        console.log(`[Detail:img] ${entry.img} · ${sizeKB} KB · ${Date.now() - t0}ms`);
-      })
-      .catch((err: Error) => console.error(`[Detail:img] Failed: ${err.message}`));
-  }, [entry]);
+    return () => controller.abort();
+  }, [entryId]);
 
   if (loading) {
     return <Typography sx={{ textAlign: 'center', py: 8 }}>Loading...</Typography>;

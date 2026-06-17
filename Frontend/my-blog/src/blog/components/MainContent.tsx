@@ -124,45 +124,42 @@ export function Search() {
 export default function MainContent() {
   const [entries, setEntries] = React.useState<IBlogEntry[]>([]);
   const [page, setPage] = React.useState(1);
+  const [totalPages, setTotalPages] = React.useState(1);
   const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [focusedCardIndex, setFocusedCardIndex] = React.useState<number | null>(null);
 
-  const fetchEntries = React.useCallback(() => {
+  React.useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const url = `${API_URL}/api/blogs`;
-    console.log(`[Blog] GET ${url}`);
-    const t0 = Date.now();
-    fetch(url)
+
+    fetch(`${API_URL}/api/blogs?page=${page}&limit=${PAGE_SIZE}`, {
+      signal: controller.signal,
+    })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch blog entries');
-        return res.json();
+        const total = parseInt(res.headers.get('x-total-count') || '0', 10);
+        return res.json().then((data: IBlogEntry[]) => ({ data, total }));
       })
-      .then((data: IBlogEntry[]) => {
-        const sizeKB = (new Blob([JSON.stringify(data)]).size / 1024).toFixed(1);
-        console.log(`[Blog] ${data.length} entries · ${sizeKB} KB · ${Date.now() - t0}ms`);
+      .then(({ data, total }) => {
         setEntries(data);
+        setTotalPages(Math.ceil(total / PAGE_SIZE) || 1);
         setLoading(false);
       })
       .catch((err: Error) => {
-        console.error(`[Blog] Error: ${err.message}`);
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
-  }, []);
 
-  React.useEffect(() => {
-    fetchEntries();
-  }, [fetchEntries]);
+    return () => controller.abort();
+  }, [page]);
 
   const filteredEntries = selectedTag
     ? entries.filter((e) => e.tag === selectedTag)
     : entries;
-
-  const totalPages = Math.ceil(filteredEntries.length / PAGE_SIZE);
-  const pageItems = filteredEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => {
     setPage(value);
@@ -172,7 +169,6 @@ export default function MainContent() {
   const handleTagSelect = (tag: string | null) => {
     setSelectedTag(tag);
     setPage(1);
-    fetchEntries();
   };
 
   const handleFocus = (index: number) => setFocusedCardIndex(index);
@@ -254,7 +250,7 @@ export default function MainContent() {
       {!loading && !error && (
         <>
           <Grid container spacing={2} columns={12}>
-            {pageItems.map((entry, index) => (
+            {filteredEntries.map((entry, index) => (
               <Grid size={{ xs: 12, sm: 6, md: 4 }} key={entry._id}>
                 <StyledCard
                   variant="outlined"

@@ -109,25 +109,24 @@ export default function Latest() {
   const [focusedCardIndex, setFocusedCardIndex] = React.useState<number | null>(null);
 
   React.useEffect(() => {
+    const controller = new AbortController();
     const url = `${API_URL}/api/blogs`;
-    console.log(`[Latest] GET ${url}`);
-    const t0 = Date.now();
-    fetch(url)
+    fetch(url, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch blog entries');
         return res.json();
       })
       .then((data: IBlogEntry[]) => {
-        const sizeKB = (new Blob([JSON.stringify(data)]).size / 1024).toFixed(1);
-        console.log(`[Latest] ${data.length} entries · ${sizeKB} KB · ${Date.now() - t0}ms`);
         setEntries(data);
         setLoading(false);
       })
       .catch((err: Error) => {
-        console.error(`[Latest] Error: ${err.message}`);
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, []);
 
   const totalPages = Math.ceil(entries.length / PAGE_SIZE);
